@@ -1,115 +1,197 @@
-# Desafio Full Stack Developer - Python (RPA e Hiperautomação)
+# Desafio Full Stack Developer — Python (RPA e Hiperautomação)
 
-# 1\. Introdução
+Robô de automação web que consulta **Pessoas Físicas** no
+[Portal da Transparência](https://portaldatransparencia.gov.br/pessoa-fisica/busca/lista)
+e devolve um JSON com os dados coletados e a **evidência da tela em Base64**.
+Inclui uma **API REST** documentada (FastAPI + Scalar) e um roteiro de
+**hiperautomação** (bônus) com Activepieces, Google Drive e Google Sheets.
 
-Bem-vindo ao nosso desafio técnico\! Este teste avaliará suas habilidades em automação robótica de processos (RPA) e hiperautomação, combinando desenvolvimento Python com integração de ferramentas low-code/no-code.
+## Stack
 
-## O que esperamos de você:
+| Camada | Tecnologia |
+|---|---|
+| Automação web | **Playwright** (Chromium, async, headless) |
+| API | **FastAPI** + **Uvicorn** |
+| Documentação | **Scalar** (sobre o OpenAPI do FastAPI) |
+| Modelos/validação | **Pydantic v2** + **pydantic-settings** |
+| Testes / lint | **pytest**, **pytest-asyncio**, **ruff** |
+| Empacotamento | **Docker** + **Docker Compose** |
+| Hiperautomação (bônus) | **Activepieces** + Google Drive/Sheets (OAuth 2.0) |
 
-* Implementação de um robô autônomo para coleta de dados.  
-* Criação de um workflow automatizado (parte bônus) para acionamento do robô e integração com APIs do Google (Drive e Sheets).  
-* Boas práticas de código e documentação.
+## Arquitetura
 
-# 2\. Detalhes do Desafio
+```
+Cliente (CLI) / Activepieces
+        │  POST /query  { term, only_social_program }
+        ▼
+┌───────────────────────────┐
+│  FastAPI  (api/)          │  docs em /scalar (Scalar)
+│  QueryService (services/) │
+└───────────┬───────────────┘
+            ▼
+┌───────────────────────────┐
+│  Scraper (scraper/)        │  BrowserManager → TransparencyPortal
+│  Playwright headless       │  → collectors → screenshot
+└───────────┬───────────────┘
+            ▼
+   models.py (Pydantic)  →  JSON final
+```
 
-## Parte 1: Automação Web (Obrigatório)
+## Estrutura de pastas
 
-**Parâmetros de Entrada**
+```
+desafio-01/
+├── app/
+│   ├── __main__.py            # CLI: `serve` e `query`
+│   ├── config.py              # Settings (pydantic-settings)
+│   ├── models.py              # Contrato Pydantic (request/result/benefit)
+│   ├── exceptions.py          # Erros de domínio + mensagens exigidas
+│   ├── api/                   # FastAPI + Scalar
+│   │   ├── app.py             # app factory + lifespan do navegador
+│   │   ├── routes.py          # POST /query, GET /health
+│   │   └── dependencies.py
+│   ├── scraper/               # Automação web
+│   │   ├── browser.py         # BrowserManager (headless, isolado, concorrente)
+│   │   ├── portal.py          # Navegação de alto nível
+│   │   ├── collectors.py      # Extração de dados das páginas
+│   │   ├── selectors.py       # Seletores centralizados (manutenção)
+│   │   └── screenshot.py      # Screenshot → Base64
+│   └── services/
+│       └── query_service.py   # Orquestra o fluxo e trata erros
+├── tests/                     # pytest (models, exceptions, service)
+├── docs/activepieces/         # Guia da Parte 2 (Drive/Sheets + OAuth)
+├── Dockerfile
+├── docker-compose.yml
+├── pyproject.toml
+└── requirements.txt / requirements-dev.txt
+```
 
-* **Nome, CPF ou NIS (obrigatório).**  
-* **Filtro de Busca:** "BENEFICIÁRIO DE PROGRAMA SOCIAL" (opcional).
+## Como executar
 
-**Objetivo:** Desenvolver um robô em Python para:
+### Local
 
-1. Acessar o **Portal da Transparência** e navegar até a consulta de "Pessoas Físicas e Jurídicas".  
-    ![chrome_S2XSb3O3Qi](https://github.com/user-attachments/assets/580c2da2-8f5c-4546-9d46-a365111786e7)
-2. Inserir os parâmetros e realizar a busca.  
-   ![chrome_s3kInqbppX](https://github.com/user-attachments/assets/664b728a-733a-4c65-9601-c4fafc66fb7c)
-3. Coletar os dados disponíveis na tela " Pessoa Física \- Panorama da relação da pessoa com o Governo Federal".  
-   ![chrome_HLYqU5kFHx](https://github.com/user-attachments/assets/193c2888-b9b5-4094-994e-c79c440c7e84)
-4. Capturar uma **imagem da tela** como evidência e convertê-la para Base64.  
-5. Para cada benefício encontrado (Auxílio Brasil, Auxílio Emergencial, Bolsa Família), acessar os detalhes e coletar as informações.  
-   ![chrome_00MI1mmOOF](https://github.com/user-attachments/assets/2ae5f207-9431-4c5a-b529-222da43ec886) 
-6. Encerrar a automação e gerar um **JSON** contendo os dados coletados e a imagem Base64.
+```bash
+python -m venv .venv
+# Windows: .\.venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+playwright install chromium
+cp .env.example .env
+```
 
-### Requisitos técnicos:
+### CLI (gera o JSON de uma consulta)
 
-* Linguagem: Python.  
-* Biblioteca recomendada: [**Playwright**](https://playwright.dev/).  
-  * Caso opte por outra biblioteca, justifique tecnicamente a escolha e demonstre benefícios.  
-* O robô deve funcionar em **modo headless** e permitir execuções simultâneas.
+```bash
+python -m app query --term "Maria das Gracas de Maria" --output resultado.json
+python -m app query --term "20666631640" --only-social-program --output resultado.json
+```
 
-Se a Parte 2 for implementada, o bot deve ser disponibilizado como API online para testes. Caso desenvolva apenas a Parte 1, é um diferencial fornecer a API documentada via Swagger ou OpenAPI.
+### API + documentação
 
-## Parte 2: Hiperautomação (Bônus)
-![image](https://github.com/user-attachments/assets/70d1f110-2b49-4344-b929-7e2179c7ccd0)
+```bash
+python -m app serve
+# Documentação Scalar:  http://localhost:8000/scalar
+# OpenAPI:              http://localhost:8000/openapi.json
+```
 
-**Objetivo:** Criar um workflow automatizado que:
+Exemplo de requisição:
 
-1. Faça requisição via API ao robô desenvolvido na Parte 1\.  
-2. Obtenha e armazene automaticamente o arquivo JSON no Google Drive (nome padrão: \[`IDENTIFICADOR_UNICO]_[DATA_HORA].json`).  
-3. Atualize um registro centralizado no Google Sheets contendo:  
-   * Identificador único da consulta, Nome, CPF, data/hora da consulta.  
-   * Link direto para o arquivo JSON respectivo no Drive.
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"term": "20666631640", "only_social_program": true}'
+```
 
-### Ferramentas sugeridas (free tier):
+### Docker
 
-* [Activepieces](https://www.activepieces.com/)  
-* [Make.com](http://Make.com)  
-* [Zapier](https://zapier.com/)
+```bash
+docker compose up --build
+# API em http://localhost:8000/scalar
+```
 
-# 3\. Critérios de Avaliação
+### Expor a API online (para testes)
 
-| Categoria | Detalhes |
-| :---- | :---- |
-| Funcionalidade | Execução correta do robô em todos os cenários de teste. |
-| Código | Legibilidade, modularização, tratamento de erros. |
-| Integrações | Uso eficiente da plataforma de workflow e das APIs do Google (se aplicável). |
-| Segurança | Boas práticas (OAuth 2.0, variáveis de ambiente). |
-| Documentação | README claro, comentários relevantes. |
-| Bônus | Implementação da Parte 2 e/ou diferenciais (notificações, testes, etc.) |
+O desafio pede o bot disponível como API online para testes. Duas opções:
 
-# 4\. Entrega e Processo
+**Túnel (mais rápido, ideal para a demo):**
 
-1. **Envio:** Finalizando o desafio, encaminhar e-mail para [rh@most.com.br](mailto:rh@most.com.br) com:  
-   * Código fonte do robô (Git repository ou arquivo compactado).  
-   * Incluir um breve relatório explicando:  
-     * Decisões técnicas.  
-     * Desafios enfrentados.  
-     * Plataforma escolhida para Parte 2 (se aplicável) e motivos.
+```bash
+python -m app serve
+# em outro terminal:
+cloudflared tunnel --url http://localhost:8000   # ou: ngrok http 8000
+```
 
-   
+Use a URL pública gerada no passo HTTP do Activepieces (Parte 2).
 
-2. **Apresentação**:  
-   * Os desafios pré-selecionados terão uma apresentação técnica agendada.  
-     * Para uma apresentação clara e objetiva, sugerimos que o candidato organize seu fluxo em duas etapas: primeiro, utilize um PPT para explicar a abordagem, decisões técnicas e desafios enfrentados no desenvolvimento. Em seguida, passe para a demonstração prática, evidenciando o funcionamento da solução e respondendo a perguntas dos avaliadores.  
-   * Durante a apresentação, será necessário demonstrar execução simultânea dos bots e o armazenamento correto dos dados.
+**Container (Docker) em qualquer host — Render, Fly.io, Railway, VPS:**
 
-**Prazo estimado:** 12-20 horas
+```bash
+docker compose up --build
+```
 
-# 5\. Cenários de Teste
+### Testes
 
-| Cenário | Entrada | Saída Esperada |
-| :---- | :---- | :---- |
-| Sucesso (CPF) | CPF ou NIS válido | JSON com dados coletados e evidência da tela. |
-| Erro (CPF) | CPF ou NIS inexistente | JSON com mensagem de erro: "Não foi possível retornar os dados no tempo de resposta solicitado". |
-| Sucesso (Nome) | Nome completo | JSON com dados do primeiro registro equivalente encontrado \+ evidência |
-| Erro (Nome) | Nome inexistente | JSON com mensagem de erro: "Foram encontrados 0 resultados para o termo …". |
-| Filtrado | Sobrenome \+ filtro social | JSON com dados do primeiro registro equivalente encontrado \+ evidência |
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check app tests
+```
 
-# 6\. Considerações Finais
+## Contrato do JSON
 
-Este desafio simula um projeto real de hiperautomação.   
-Valorizamos:
+```json
+{
+  "query_id": "fb1d8222c2aa414b92301f72682cae93",
+  "timestamp": "2026-10-08T20:08:30.078903Z",
+  "term": "20666631640",
+  "only_social_program": true,
+  "status": "success",
+  "message": "Consulta realizada com sucesso.",
+  "person": { "name": "DAIANY ...", "cpf": "***.531.732-**", "location": "BARCARENA - PA" },
+  "benefits": [
+    {
+      "type": "Auxílio Brasil",
+      "nis": "1.2.3",
+      "name": "DAIANY ...",
+      "amount_received": "R$ 1.098,00",
+      "payments": [ { "fields": { "Mês Folha": "02/2022", "Valor Parcela": "195,00" } } ]
+    }
+  ],
+  "evidence": { "image_base64": "iVBORw0KGgo...", "content_type": "image/png" }
+}
+```
 
-* Soluções bem arquitetadas.  
-* Documentação clara.  
-* Justificativas técnicas para decisões.
+- `status`: `success` | `not_found` | `error`.
+- `benefits[].payments[].fields`: mapa **cabeçalho → valor**, pois as colunas
+  variam por tipo de benefício (Auxílio Brasil, Auxílio Emergencial, BPC, etc.).
 
-## **mostQI**
+## Cenários de teste cobertos
 
-Acesse nosso [Linkedin](https://www.linkedin.com/company/mobile-solution-technology) para mais informações sobre vagas e novidades.
+| Cenário | Entrada | Resultado |
+|---|---|---|
+| Sucesso (CPF/NIS) | NIS válido | `success` + dados + evidência |
+| Erro (CPF/NIS) | documento inexistente | `not_found` + *"Não foi possível retornar os dados no tempo de resposta solicitado"* |
+| Sucesso (Nome) | nome completo | `success` + 1º registro equivalente + evidência |
+| Erro (Nome) | nome inexistente | `not_found` + *"Foram encontrados 0 resultados para o termo …"* |
+| Filtrado | nome + filtro social | `success` + 1º registro (beneficiário) + evidência |
 
-Até breve\! 🤩  
+## Parte 2 — Hiperautomação (bônus)
 
+Workflow no **Activepieces** que chama a API, grava o JSON no Google Drive
+(`[ID]_[DATA_HORA].json`) e registra a consulta no Google Sheets via **OAuth 2.0**.
 
+Passo a passo em [`docs/activepieces/README.md`](docs/activepieces/README.md).
+Os IDs da pasta e da planilha vão no `.env`
+(`GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_SHEETS_SPREADSHEET_ID`).
+
+## Decisões técnicas (resumo)
+
+- **Playwright** por robustez, auto-wait e suporte nativo a execução headless e
+  contextos isolados (concorrência).
+- **FastAPI** pela geração automática do OpenAPI; **Scalar** como UI de docs.
+- **Separação em camadas** (scraper / service / api) e **seletores centralizados**
+  para facilitar manutenção quando o Portal muda.
+- **WAF**: o Portal usa AWS WAF; a automação remove os sinais de automação do
+  Chromium (`--enable-automation`, `navigator.webdriver`) para navegar normalmente.
+
+Detalhes completos, dificuldades e justificativas em [`RELATORIO.md`](RELATORIO.md).
